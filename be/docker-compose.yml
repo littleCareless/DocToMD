@@ -1,0 +1,36 @@
+version: "3.8"
+
+services:
+    web:
+        build: .
+        ports:
+            - "8000:8000"
+        volumes:
+            - ./uploads:/app/uploads
+            - ./markdown_files:/app/markdown_files
+        env_file:
+            - .env
+        depends_on:
+            - redis
+        command: gunicorn --bind 0.0.0.0:8000 --workers 4 app:app
+
+    celery_worker:
+        build: .
+        volumes:
+            - ./uploads:/app/uploads
+            - ./markdown_files:/app/markdown_files
+        env_file:
+            - .env
+        depends_on:
+            - redis
+        command: celery -A app.celery worker --loglevel=info
+
+    redis:
+        image: redis:alpine
+        ports:
+            - "6379:6379"
+        volumes:
+            - redis_data:/data
+
+volumes:
+    redis_data:
