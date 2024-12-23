@@ -1,0 +1,16 @@
+flask==3.0.2
+flask-cors==4.0.2
+celery==5.3.6
+redis==5.0.1
+gunicorn==22.0.0
+markitdown==0.0.1a3
+openai==1.58.1
+Pillow==10.3.0
+pytesseract==0.3.10
+SpeechRecognition==3.10.1
+python-dotenv==1.0.1
+Werkzeug==3.0.6
+pdf2image==1.16.3
+httpx
+opencv-python-headless==4.8.1.78  # 替换 opencv-python
+numpy==1.24.3
