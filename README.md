@@ -28,13 +28,29 @@ DocToMD 是一个基于 Web 的文档转换工具,可以将多种格式的文档
 - Celery
 - Redis
 - Docker
+- 核心依赖:
+  - MarkItDown (微软开源的文档转换库)
+  - OpenAI GPT-4V (用于高级 OCR 和内容优化)
+  - pytesseract (OCR 支持)
+  - pdf2image (PDF 转换支持)
+  - opencv-python (图像处理优化)
+
+### 实现原理
+
+文档转换采用多层处理策略:
+
+1. 首先使用 MarkItDown 进行文档解析
+2. 如果解析结果不理想,使用 pdf2image 将文档转为图像
+3. 通过 OpenAI GPT-4V 进行高精度 OCR 和内容结构化
+4. 使用 opencv-python 进行图像预处理优化
+5. 支持缓存机制避免重复转换
 
 ## 快速开始
 
 1. 克隆项目:
 
 ```bash
-git clone https://github.com/yourusername/doctomd.git
+git clone https://github.com/littleCareless/DocToMD.git
 cd doctomd
 ```
 
