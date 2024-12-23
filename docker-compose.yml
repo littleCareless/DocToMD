@@ -1,64 +1,94 @@
 version: "3.8"
 
 services:
-    frontend:
-        build:
-            context: ./fe
-            dockerfile: Dockerfile
-        network_mode: "host"
-        environment:
-            - FRONTEND_PORT=${FRONTEND_PORT}
-            - BACKEND_PORT=${BACKEND_PORT}
-        depends_on:
-            - backend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    network_mode: "host"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    environment:
+      - FRONTEND_PORT=${FRONTEND_PORT}
+      - BACKEND_PORT=${BACKEND_PORT}
+      - DOCKER_CLIENT_TIMEOUT=120
+      - COMPOSE_HTTP_TIMEOUT=120
+    depends_on:
+      - backend
 
-    backend:
-        build:
-            context: ./be
-            dockerfile: Dockerfile
-        volumes:
-            - ./be:/app
-        environment:
-            - OPENAI_API_KEY=${OPENAI_API_KEY}
-            - CELERY_BROKER_URL=redis://localhost:6379/0
-            - CELERY_RESULT_BACKEND=redis://localhost:6379/0
-            - FLASK_APP=app.py
-            - FLASK_ENV=development
-            - FLASK_DEBUG=1
-            - BACKEND_PORT=${BACKEND_PORT}
-        network_mode: "host"
-        healthcheck:
-            test: ["CMD", "curl", "-f", "http://localhost:${BACKEND_PORT}/"]
-            interval: 30s
-            timeout: 10s
-            retries: 3
-        command: flask run --host=0.0.0.0 --port=${BACKEND_PORT}
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    volumes:
+      - ./backend:/app
+      - ./debug:/app/debug # 添加调试目录映射
+    env_file:
+      - ./.env # 修改为根目录下的 .env 文件
+    environment:
+      # OpenAI configuration
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      - OPENAI_LLM_MODEL=${OPENAI_LLM_MODEL}
+      # Redis configuration
+      - CELERY_BROKER_URL=redis://localhost:6379/0
+      - CELERY_RESULT_BACKEND=redis://localhost:6379/0
+      # Flask configuration
+      - FLASK_APP=app.py
+      - FLASK_ENV=production # 改为 production
+      - FLASK_DEBUG=0 # 关闭调试模式
+      - BACKEND_PORT=${BACKEND_PORT}
+      # Docker configuration
+      - DOCKER_CLIENT_TIMEOUT=120
+      - COMPOSE_HTTP_TIMEOUT=120
+    network_mode: "host"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${BACKEND_PORT}/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: flask run --host=0.0.0.0 --port=${BACKEND_PORT}
 
-    celery_worker:
-        build:
-            context: ./be
-            dockerfile: Dockerfile
-        volumes:
-            - ./be:/app
-        environment:
-            - OPENAI_API_KEY=${OPENAI_API_KEY}
-            - CELERY_BROKER_URL=redis://localhost:6379/0
-            - CELERY_RESULT_BACKEND=redis://localhost:6379/0
-            - BACKEND_PORT=${BACKEND_PORT}
-        network_mode: "host"
-        dns:
-            - 8.8.8.8
-            - 8.8.4.4
-        depends_on:
-            - redis
-            - backend
-        command: celery -A app.celery worker --loglevel=info
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    volumes:
+      - ./backend:/app
+      - ./debug:/app/debug # 添加调试目录映射
+    env_file:
+      - ./.env # 修改为根目录下的 .env 文件
+    environment:
+      # OpenAI configuration
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      - OPENAI_LLM_MODEL=${OPENAI_LLM_MODEL}
+      # Redis configuration
+      - CELERY_BROKER_URL=redis://localhost:6379/0
+      - CELERY_RESULT_BACKEND=redis://localhost:6379/0
+      # Port configuration
+      - BACKEND_PORT=${BACKEND_PORT}
+      # Docker configuration
+      - DOCKER_CLIENT_TIMEOUT=120
+      - COMPOSE_HTTP_TIMEOUT=120
+    network_mode: "host"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    depends_on:
+      - redis
+      - backend
+    command: celery -A app.celery worker --loglevel=info
 
-    redis:
-        image: redis:alpine
-        network_mode: "host"
-        volumes:
-            - redis_data:/data
+  redis:
+    image: redis:alpine
+    network_mode: "host"
+    volumes:
+      - redis_data:/data
 
 volumes:
-    redis_data:
+  redis_data:

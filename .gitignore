@@ -2,48 +2,38 @@
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
-env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+venv/
 .env
+!.env.example
 
 # Node
 node_modules/
+.pnpm-debug.log*
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.pnpm-debug.log*
-.DS_Store
+
+# Build outputs
+/frontend/dist/
+/frontend/build/
+
+# Project specific
+/backend/uploads/*
+!/backend/uploads/.gitkeep
+/backend/markdown_files/*
+!/backend/markdown_files/.gitkeep
+/backend/debug/*
+!/backend/debug/.gitkeep
+/backend/cache/*
+!/backend/cache/.gitkeep
+*.md
+!README.md
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
-.project
-.classpath
-.settings/
-
-# Project specific
-be/uploads/
-be/markdown_files/
-*.md
-!README.md
 
 # Docker
 .docker/
@@ -52,10 +42,6 @@ docker-compose.override.yml
 # Logs
 logs/
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
 
 # Local development
 .env.local
@@ -63,16 +49,10 @@ yarn-error.log*
 .env.test.local
 .env.production.local
 
-# Build outputs
-/fe/dist/
-/fe/build/
-
 # Cache
 .cache/
 .npm/
 .eslintcache
-.stylelintcache
 
-# Testing
-/coverage
-.nyc_output 
+# debug
+debug
