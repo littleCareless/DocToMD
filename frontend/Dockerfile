@@ -1,10 +1,16 @@
 # Build stage
-FROM node:18-alpine as build
+FROM node:20-alpine as build
 
 WORKDIR /app
 
+# 检查版本信息
+RUN node -v && npm -v
+
+# 安装 pnpm
+RUN npm install -g pnpm
+
 # Copy package files
-COPY package*.json ./
+COPY package*.json pnpm-lock.yaml ./
 
 # Install dependencies
 RUN npm install

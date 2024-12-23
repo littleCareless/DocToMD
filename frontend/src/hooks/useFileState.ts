@@ -93,10 +93,17 @@ export function useFileState() {
     });
   }, [updateStorage]);
 
+  // 添加清除历史记录的方法
+  const clearHistory = useCallback(() => {
+    setFiles([]);
+    localStorage.removeItem(STORAGE_KEY);
+  }, []);
+
   return {
     files,
     addFiles,
     removeFile,
     updateFileStatus,
+    clearHistory,  // 导出新方法
   };
 }

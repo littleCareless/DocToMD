@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { FileType, Download, Eye, X, Clock } from "lucide-react";
+import { FileType, Download, Eye, X, Clock, Trash2 } from "lucide-react"; // 添加 Trash2 图标
 import type { FileWithStatus } from "../types/file";
 import { downloadMarkdown, previewMarkdown } from "../services/api";
 import { formatDate } from "../utils/date"; // 新增工具函数
@@ -7,11 +7,13 @@ import { formatDate } from "../utils/date"; // 新增工具函数
 interface ConversionProgressProps {
   files: FileWithStatus[];
   onRetry: (id: string) => void;
+  onClearHistory: () => void;  // 新增属性
 }
 
 export function ConversionProgress({
   files,
   onRetry,
+  onClearHistory,
 }: ConversionProgressProps) {
   const [previewContent, setPreviewContent] = useState<string>("");
   const [showPreview, setShowPreview] = useState(false);
@@ -73,13 +75,30 @@ export function ConversionProgress({
     }
   };
 
+  // 检查是否所有文件都已处理完成
+  const allFilesProcessed = files.length > 0 && files.every(
+    file => file.status === 'completed' || file.status === 'error'
+  );
+
   return (
     <>
       <div className="mt-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-medium text-gray-900">
-            Conversion Progress
-          </h3>
+          <div className="flex items-center gap-4">
+            <h3 className="text-lg font-medium text-gray-900">
+              Conversion Progress
+            </h3>
+            {allFilesProcessed && (
+              <button
+                onClick={onClearHistory}
+                className="flex items-center gap-1 px-3 py-1 text-sm text-red-600 transition-colors border border-red-600 rounded-md hover:text-red-700 hover:bg-red-50"
+                title="Clear History"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Clear History</span>
+              </button>
+            )}
+          </div>
           {files.some(
             (f) => f.status === "converting" || f.status === "completed"
           ) && (

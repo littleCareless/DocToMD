@@ -4,7 +4,7 @@ import { useStatusCheck } from "./useStatusCheck";
 import { useFileState } from "./useFileState";
 
 export function useFileConversion() {
-  const { files, addFiles, removeFile, updateFileStatus } = useFileState();
+  const { files, addFiles, removeFile, updateFileStatus, clearHistory } = useFileState();
   const { startStatusCheck } = useStatusCheck(updateFileStatus);
   const statusCheckIntervals = useRef<Record<string, number>>({});
 
@@ -55,5 +55,6 @@ export function useFileConversion() {
     removeFile,
     convertFiles,
     retryFile,
+    clearHistory,  // 导出新方法
   };
 }
