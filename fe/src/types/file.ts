@@ -1,13 +1,28 @@
 export interface FileWithStatus {
   id: string;
   file: File;
-  status: 'pending' | 'converting' | 'completed' | 'error';
+  status: "pending" | "converting" | "completed" | "error";
   progress: number;
-  error?: string;
   taskId?: string;
+  description?: string;
+  error?: string;
   previewUrl?: string;
   downloadUrl?: string;
-  description?: string;
+  completedAt?: number; // 添加完成时间字段
+}
+
+export interface StoredFileInfo {
+  id: string;
+  fileName: string;
+  fileSize: number;
+  taskId: string;
+  status: "pending" | "converting" | "completed" | "error";
+  progress: number;
+  timestamp: number;
+  previewUrl?: string;
+  downloadUrl?: string;
+  error?: string;
+  completedAt?: number; // 添加完成时间字段
 }
 
 export interface ConversionResult {
