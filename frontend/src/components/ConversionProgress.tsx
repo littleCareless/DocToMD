@@ -141,7 +141,7 @@ export function ConversionProgress({
                   <FileType className="w-5 h-5 mr-3 text-gray-400" />
                   <div>
                     <p className="text-sm font-medium text-gray-900">
-                      {file.file.name}
+                      {file?.file?.name }
                     </p>
                     <p className="text-sm text-gray-500">{file.description}</p>
                     {file.completedAt && (

@@ -46,6 +46,24 @@ export async function checkConversionStatus(
   };
 }
 
+export async function getBatchConversionStatus(
+  taskIds: string[]
+): Promise<Record<string, ConversionStatus>> {
+  const response = await fetch(`${API_ENDPOINTS.status}/batch`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ taskIds })
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch batch conversion status');
+  }
+
+  return response.json();
+}
+
 export async function previewMarkdown(
   taskId: string
 ): Promise<{ content: string; filename: string }> {
