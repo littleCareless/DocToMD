@@ -7,7 +7,7 @@ import { formatDate } from "../utils/date"; // 新增工具函数
 interface ConversionProgressProps {
   files: FileWithStatus[];
   onRetry: (id: string) => void;
-  onClearHistory: () => void;  // 新增属性
+  onClearHistory: () => void; // 新增属性
 }
 
 export function ConversionProgress({
@@ -20,6 +20,7 @@ export function ConversionProgress({
   const [elapsedTime, setElapsedTime] = useState<string>("00:00:00");
   const workerRef = useRef<Worker | null>(null);
   const timerStartedRef = useRef<boolean>(false);
+  const [isClearing, setIsClearing] = useState(false);
 
   useEffect(() => {
     // 创建 Web Worker
@@ -75,9 +76,25 @@ export function ConversionProgress({
     }
   };
 
-  // 检查是否所有文件都已处理完成
-  const allFilesProcessed = files.length > 0 && files.every(
-    file => file.status === 'completed' || file.status === 'error'
+  const handleClearHistory = async () => {
+    if (isClearing) return;
+
+    console.log("Clear history clicked"); // 添加日志
+    setIsClearing(true);
+    try {
+      await onClearHistory();
+      console.log("Clear history completed"); // 添加日志
+    } catch (error) {
+      console.error("Failed to clear history:", error);
+      // 可以在这里添加错误提示
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
+  // 修改检查逻辑，只在有已完成或错误的文件时显示清除按钮
+  const hasCompletedOrErrorFiles = files.some(
+    (file) => file.status === "completed" || file.status === "error"
   );
 
   return (
@@ -88,14 +105,19 @@ export function ConversionProgress({
             <h3 className="text-lg font-medium text-gray-900">
               Conversion Progress
             </h3>
-            {allFilesProcessed && (
+            {hasCompletedOrErrorFiles && (
               <button
-                onClick={onClearHistory}
-                className="flex items-center gap-1 px-3 py-1 text-sm text-red-600 transition-colors border border-red-600 rounded-md hover:text-red-700 hover:bg-red-50"
+                onClick={handleClearHistory} // 确保这里绑定了正确的处理函数
+                disabled={isClearing}
+                className={`flex items-center gap-1 px-3 py-1 text-sm text-red-600 transition-colors border border-red-600 rounded-md ${
+                  isClearing
+                    ? "opacity-50 cursor-not-allowed"
+                    : "hover:text-red-700 hover:bg-red-50"
+                }`}
                 title="Clear History"
               >
                 <Trash2 className="w-4 h-4" />
-                <span>Clear History</span>
+                <span>{isClearing ? "Clearing..." : "Clear History"}</span>
               </button>
             )}
           </div>

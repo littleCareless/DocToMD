@@ -5,7 +5,7 @@ import { FileText } from 'lucide-react';
 import { useFileConversion } from './hooks/useFileConversion';
 
 function App() {
-  const { files, addFiles, convertFiles, retryFile } = useFileConversion();
+  const { files, addFiles, convertFiles, retryFile, clearHistory } = useFileConversion();
 
   // 添加离开提示
   useEffect(() => {
@@ -22,6 +22,17 @@ function App() {
       return () => window.removeEventListener('beforeunload', handleBeforeUnload);
     }
   }, [files]);
+
+  // 添加日志
+  const handleClearHistory = async () => {
+    console.log('App: clearHistory called');
+    try {
+      await clearHistory();
+    } catch (error) {
+      console.error('App: clearHistory failed:', error);
+      // 可以在这里添加错误提示UI
+    }
+  };
 
   const handleConvert = async () => {
     await convertFiles();
@@ -44,7 +55,11 @@ function App() {
 
         <div className="bg-white rounded-lg shadow-sm p-6">
           <FileUpload onFilesSelected={addFiles} />
-          <ConversionProgress files={files} onRetry={retryFile} />
+          <ConversionProgress
+            files={files}
+            onRetry={retryFile}
+            onClearHistory={handleClearHistory} // 使用包装的处理函数
+          />
 
           {files.some(f => f.status === 'pending') && (
             <div className="mt-6">

@@ -19,8 +19,14 @@ export function useFileState() {
           progress: f.progress,
           taskId: f.taskId,
           // 恢复 URL
-          previewUrl: f.status === 'completed' ? `/api/convert/${f.taskId}/preview` : undefined,
-          downloadUrl: f.status === 'completed' ? `/api/convert/${f.taskId}/download` : undefined,
+          previewUrl:
+            f.status === "completed"
+              ? `/api/convert/${f.taskId}/preview`
+              : undefined,
+          downloadUrl:
+            f.status === "completed"
+              ? `/api/convert/${f.taskId}/download`
+              : undefined,
           completedAt: f.completedAt,
         }));
         setFiles(restoredFiles);
@@ -34,7 +40,7 @@ export function useFileState() {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(filteredFiles));
         }
       } catch (error) {
-        console.error('Failed to restore conversion history:', error);
+        console.error("Failed to restore conversion history:", error);
         localStorage.removeItem(STORAGE_KEY);
       }
     }
@@ -56,19 +62,22 @@ export function useFileState() {
   }, []);
 
   // 添加文件的方法
-  const addFiles = useCallback((newFiles: File[]) => {
-    setFiles((prev) => {
-      const filesWithStatus: FileWithStatus[] = newFiles.map((file) => ({
-        id: Math.random().toString(36).substring(7),
-        file,
-        status: "pending",
-        progress: 0,
-      }));
-      const updatedFiles = [...prev, ...filesWithStatus];
-      updateStorage(updatedFiles);
-      return updatedFiles;
-    });
-  }, [updateStorage]);
+  const addFiles = useCallback(
+    (newFiles: File[]) => {
+      setFiles((prev) => {
+        const filesWithStatus: FileWithStatus[] = newFiles.map((file) => ({
+          id: Math.random().toString(36).substring(7),
+          file,
+          status: "pending",
+          progress: 0,
+        }));
+        const updatedFiles = [...prev, ...filesWithStatus];
+        updateStorage(updatedFiles);
+        return updatedFiles;
+      });
+    },
+    [updateStorage]
+  );
 
   // 更新文件状态的方法
   const updateFileStatus = useCallback(
@@ -85,25 +94,78 @@ export function useFileState() {
   );
 
   // 移除文件的方法
-  const removeFile = useCallback((id: string) => {
-    setFiles((prev) => {
-      const newFiles = prev.filter((file) => file.id !== id);
-      updateStorage(newFiles);
-      return newFiles;
-    });
-  }, [updateStorage]);
+  const removeFile = useCallback(
+    (id: string) => {
+      setFiles((prev) => {
+        const newFiles = prev.filter((file) => file.id !== id);
+        updateStorage(newFiles);
+        return newFiles;
+      });
+    },
+    [updateStorage]
+  );
 
-  // 添加清除历史记录的方法
-  const clearHistory = useCallback(() => {
-    setFiles([]);
-    localStorage.removeItem(STORAGE_KEY);
-  }, []);
+  // 修改清除历史记录的方法
+  const clearHistory = useCallback(
+    async (deviceId: string) => {
+      console.log("useFileState: clearHistory called with deviceId:", deviceId);
+
+      const taskIds = files
+        .filter(
+          (file) => file.status === "completed" || file.status === "error"
+        )
+        .map((file) => file.taskId)
+        .filter((id): id is string => id != null);
+
+      console.log("Tasks to clear:", taskIds);
+
+      if (taskIds.length > 0) {
+        try {
+          // 调用后端API清除历史
+          const response = await fetch("/api/convert/clear-history", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ taskIds, deviceId }), // 添加 deviceId
+          });
+
+          if (!response.ok) {
+            throw new Error("Failed to clear server-side history");
+          }
+
+          console.log("Server-side history cleared");
+        } catch (error) {
+          console.error("Failed to clear server-side history:", error);
+          throw error;
+        }
+      }
+
+      // 更新前端状态
+      setFiles((prev) => {
+        const newFiles = prev.filter(
+          (file) => file.status !== "completed" && file.status !== "error"
+        );
+        console.log("Filtered files:", newFiles.length);
+        return newFiles;
+      });
+
+      // 清理localStorage
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+        console.log("localStorage cleared");
+      } catch (error) {
+        console.error("Failed to clear localStorage:", error);
+      }
+    },
+    [files]
+  );
 
   return {
     files,
     addFiles,
     removeFile,
     updateFileStatus,
-    clearHistory,  // 导出新方法
+    clearHistory, // 导出新方法
   };
 }

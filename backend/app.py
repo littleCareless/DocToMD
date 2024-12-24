@@ -19,6 +19,9 @@ import numpy as np
 import hashlib
 import json
 from pathlib import Path
+from paddleocr import PaddleOCR
+import io
+from PIL import Image
 
 # 确保在最开始就加载环境变量
 load_dotenv()
@@ -34,9 +37,10 @@ print("==========================")
 
 # 测试 OpenAI API 连接
 print("\n=== Testing OpenAI API Connection ===")
+base_url = os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
 try:
     response = httpx.get(
-        "https://api.openai.com/v1/models",
+        base_url,
         headers={"Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}"},
         timeout=10.0
     )
@@ -97,7 +101,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Initialize OpenAI client for LLM functionality
-base_url = os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
+
 logger.info(f"Initializing OpenAI client with base_url: {base_url}")
 client = OpenAI(
     base_url=base_url,
@@ -172,32 +176,59 @@ def save_cache_result(file_hash: str, result: dict):
     except Exception as e:
         logger.error(f"Error saving cache: {e}")
 
+# 修改文件夹结构，加入设备ID
+def get_user_folders(device_id: str):
+    """获取特定设备的文件夹路径"""
+    base_folders = {
+        'upload': os.path.join(UPLOAD_FOLDER, device_id),
+        'markdown': os.path.join(MARKDOWN_FOLDER, device_id),
+        'cache': os.path.join(CACHE_FOLDER, device_id),
+    }
+
+    # 确保所有文件夹存在
+    for folder in base_folders.values():
+        os.makedirs(folder, exist_ok=True)
+
+    return base_folders
+
 @app.route('/api/convert', methods=['POST'])
 def convert():
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400
 
     file = request.files['file']
+    device_id = request.form.get('deviceId')
+
+    if not device_id:
+        return jsonify({'error': 'No device ID provided'}), 400
+
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
 
     if not allowed_file(file.filename):
         return jsonify({'error': 'Unsupported file type'}), 400
 
-    filepath = Path(UPLOAD_FOLDER) / secure_filename(file.filename)
+    # 获取用户特定的文件夹
+    user_folders = get_user_folders(device_id)
+    filepath = Path(user_folders['upload']) / secure_filename(file.filename)
     file.save(str(filepath))
 
     file_hash = calculate_file_hash(str(filepath))
+    cache_path = os.path.join(user_folders['cache'], f"{file_hash}.json")
 
-    cached_result = get_cached_result(file_hash)
-    if cached_result:
-        os.remove(str(filepath))  # 删除上传的文件
-        return jsonify({
-            'message': 'File conversion completed (cached).',
-            'id': file_hash  # 使用文件哈希作为任务ID
-        }), 202  # 返回202以保持一致的状态检查流程
+    # 检查用户特定的缓存
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, 'r') as f:
+                cached_result = json.load(f)
+            return jsonify({
+                'message': 'File conversion completed (cached).',
+                'id': file_hash
+            }), 202
+        except Exception:
+            pass
 
-    task = convert_file.delay(str(filepath), file_hash)
+    task = convert_file.delay(str(filepath), file_hash, device_id)
     return jsonify({
         'message': 'File uploaded successfully, conversion in progress.',
         'id': task.id
@@ -207,7 +238,7 @@ def convert():
 def get_status(task_id):
     # 首先检查是否是缓存结果
     cached_result = get_cached_result(task_id)
-    if cached_result:
+    if (cached_result):
         return jsonify({
             'state': 'SUCCESS',
             'progress': 100,
@@ -311,6 +342,40 @@ def download_file(task_id):
         download_name=os.path.basename(task.info['markdown_path'])
     )
 
+@app.route('/api/convert/clear-history', methods=['POST'])
+def clear_history():
+    try:
+        data = request.get_json()
+        task_ids = data.get('taskIds', [])
+        device_id = data.get('deviceId')
+
+        if not device_id:
+            return jsonify({'error': 'No device ID provided'}), 400
+
+        user_folders = get_user_folders(device_id)
+
+        # 删除用户特定的文件和缓存
+        for task_id in task_ids:
+            # 删除缓存
+            cache_file = os.path.join(user_folders['cache'], f"{task_id}.json")
+            if os.path.exists(cache_file):
+                os.remove(cache_file)
+
+            # 获取并删除markdown文件
+            try:
+                task_result = AsyncResult(task_id)
+                if task_result.successful():
+                    markdown_path = task_result.info.get('markdown_path')
+                    if markdown_path and os.path.exists(markdown_path):
+                        os.remove(markdown_path)
+            except Exception as e:
+                logger.warning(f"Failed to remove file for task {task_id}: {e}")
+
+        return jsonify({'message': 'History cleared successfully'}), 200
+    except Exception as e:
+        logger.error(f"Error clearing history: {e}")
+        return jsonify({'error': str(e)}), 500
+
 def is_valid_content(content: str) -> bool:
     """验证提取的内容是否有效"""
     # 移除空白字符后的最小有效长度
@@ -361,13 +426,24 @@ def is_valid_content(content: str) -> bool:
         "手续费",
         "股票期货",
         "无门槛",
-        "加微信"
+        "加微信",
+        "国企证券",
+        "万一",
+        "开股票账户",
+        "开期货账户",
+        '账户',
+        "加一分",
+        "国企期货",
+        '期货',
+        "书籍下载",
+        "点击网站链接",
+        "二维码添加微信",
     ]
 
     # 计算垃圾关键词出现的次数
     spam_count = sum(1 for keyword in spam_keywords if keyword in content)
     # 如果出现超过2个关键词，认为是垃圾信息
-    if (spam_count > 2):
+    if (spam_count > 1):
         return False
 
     # 检查是否包含足够的中文字符
@@ -418,9 +494,36 @@ def enhance_image_quality(image_path):
         logger.error(f"Image enhancement failed: {e}")
         return False
 
-@celery.task(bind=True)
-def convert_file(self, filepath: str, file_hash: str):
+# 初始化PaddleOCR（在全局变量区域）
+paddle_ocr = PaddleOCR(use_angle_cls=True, lang='ch', use_gpu=False)
+logger.info("PaddleOCR initialized successfully")
+
+def process_image_with_paddle_ocr(image_path):
+    """使用PaddleOCR处理图片"""
     try:
+        logger.info(f"Processing image with PaddleOCR: {image_path}")
+        result = paddle_ocr.ocr(image_path, cls=True)
+
+        if not result or not result[0]:
+            logger.warning("PaddleOCR returned empty result")
+            return ""
+
+        # 提取识别的文本
+        text_content = []
+        for line in result[0]:
+            if len(line) >= 2:  # 确保结果包含文本部分
+                text_content.append(line[1][0])  # 获取识别的文本内容
+
+        return "\n".join(text_content)
+    except Exception as e:
+        logger.error(f"PaddleOCR processing failed: {e}")
+        return ""
+
+@celery.task(bind=True)
+def convert_file(self, filepath: str, file_hash: str, device_id: str):
+    try:
+        user_folders = get_user_folders(device_id)
+
         logger.info(f"Starting conversion for file: {filepath}")
 
         # 检查文件是否存在
@@ -448,7 +551,7 @@ def convert_file(self, filepath: str, file_hash: str):
 
             if file_extension == '.pdf':
                 try:
-                    logger.info("Converting PDF to images for GPT-4V processing...")
+                    logger.info("Converting PDF to images for OCR processing...")
                     content = ''
 
                     with tempfile.TemporaryDirectory() as temp_dir:
@@ -459,7 +562,7 @@ def convert_file(self, filepath: str, file_hash: str):
                         # 创建调试目录
                         debug_subdir = os.path.join(DEBUG_FOLDER, os.path.splitext(os.path.basename(filepath))[0])
                         os.makedirs(debug_subdir, exist_ok=True)
-                        logger.info(f"Debug images will backend saved to: {debug_subdir}")
+                        logger.info(f"Debug images will be saved to: {debug_subdir}")
 
                         for i, image in enumerate(images):
                             logger.info(f"Processing page {i+1}/{total_images}")
@@ -470,71 +573,110 @@ def convert_file(self, filepath: str, file_hash: str):
                             temp_image = os.path.join(temp_dir, f'page_{i}.png')
                             debug_image = os.path.join(debug_subdir, f'page_{i}.png')
                             image.save(temp_image, 'PNG')
-                            image.save(debug_image, 'PNG')  # 保存一份到调试目录
+                            image.save(debug_image, 'PNG')
                             logger.info(f"Saved debug image: {debug_image}")
 
                             # 增强图片质量
                             enhanced_image = enhance_image_quality(temp_image)
                             if enhanced_image:
                                 logger.info(f"Successfully enhanced image quality")
-                                # 同时保存增强后的图片到调试目录
                                 enhanced_debug = os.path.join(debug_subdir, f'page_{i}_enhanced.png')
                                 import shutil
                                 shutil.copy2(enhanced_image, enhanced_debug)
                                 # 使用增强后的图片进行OCR
                                 temp_image = enhanced_image
 
-                            # 使用GPT-4V处理图像
+                            # 修改OCR处理部分
                             try:
-                                logger.info(f"Making API request to: {client.base_url}/chat/completions")  # 添加这行
-                                with open(temp_image, 'rb') as img_file:
-                                    # 记录图片大小
-                                    img_file.seek(0, 2)
-                                    file_size = img_file.tell()
-                                    img_file.seek(0)
-                                    logger.info(f"Processing image size: {file_size/1024/1024:.2f}MB")
+                                logger.info("Starting multi-stage OCR process...")
 
-                                    response = client.chat.completions.create(
-                                        model=os.getenv('OPENAI_LLM_MODEL', 'gpt-4-vision-preview'),
-                                        messages=[
-                                            {
-                                                "role": "user",
-                                                "content": [
-                                                    {
-                                                        "type": "text",
-                                                        "text": "请识别这个图片中的所有文字内容。如果发现表格，请转换为Markdown表格格式。请保持原始的段落结构和格式。"
-                                                    },
-                                                    {
-                                                        "type": "image_url",
-                                                        "image_url": {
-                                                            "url": f"data:image/png;base64,{base64.b64encode(img_file.read()).decode('utf-8')}"
+                                # 1. 首先尝试Tesseract
+                                logger.info("1. Attempting Tesseract OCR...")
+                                tesseract_text = pytesseract.image_to_string(temp_image, lang='chi_sim+eng')
+
+                                # 2. 尝试PaddleOCR
+                                logger.info("2. Attempting PaddleOCR...")
+                                paddle_text = process_image_with_paddle_ocr(temp_image)
+
+                                # 3. 选择最佳结果
+                                if is_valid_content(tesseract_text):
+                                    logger.info("Using Tesseract OCR result")
+                                    page_text = tesseract_text
+                                elif is_valid_content(paddle_text):
+                                    logger.info("Using PaddleOCR result")
+                                    page_text = paddle_text
+                                else:
+                                    # 4. 如果两者都不理想，使用GPT-4V
+                                    logger.info("Local OCR results not satisfactory, trying GPT-4V...")
+                                    try:
+                                        with open(temp_image, 'rb') as img_file:
+                                            # GPT-4V处理代码保持不变
+                                            logger.info(f"Making API request to: {client.base_url}/chat/completions")  # 添加这行
+                                            with open(temp_image, 'rb') as img_file:
+                                                # 记录图片大小
+                                                img_file.seek(0, 2)
+                                                file_size = img_file.tell()
+                                                img_file.seek(0)
+                                                logger.info(f"Processing image size: {file_size/1024/1024:.2f}MB")
+
+                                                response = client.chat.completions.create(
+                                                    model=os.getenv('OPENAI_LLM_MODEL', 'gpt-4-vision-preview'),
+                                                    messages=[
+                                                        {
+                                                            "role": "user",
+                                                            "content": [
+                                                                {
+                                                                    "type": "text",
+                                                                    "text": "请识别这个图片中的所有文字内容。如果发现表格，请转换为Markdown表格格式。请保持原始的段落结构和格式。"
+                                                                },
+                                                                {
+                                                                    "type": "image_url",
+                                                                    "image_url": {
+                                                                        "url": f"data:image/png;base64,{base64.b64encode(img_file.read()).decode('utf-8')}"
+                                                                    }
+                                                                }
+                                                            ]
                                                         }
-                                                    }
-                                                ]
-                                            }
-                                        ],
-                                    )
+                                                    ],
+                                                )
 
-                                    # 处理返回的文本
-                                    page_text = response.choices[0].message.content
-                                    logger.info(f"OCR Result Preview: {page_text[:200]}...")  # 打印前200个字符
-                                    logger.info(f"OCR Result Length: {len(page_text)}")
+                                                # 处理返回的文本
+                                                page_text = response.choices[0].message.content
+                                                logger.info(f"OCR Result Preview: {page_text[:200]}...")  # 打印前200个字符
+                                                logger.info(f"OCR Result Length: {len(page_text)}")
 
-                                    if page_text.strip():
-                                        content += f"## Page {i+1}\n\n{page_text}\n\n"
-                                    else:
-                                        logger.warning(f"Empty OCR result for page {i+1}")
-                                        # 保存失败的请求信息
-                                        with open(os.path.join(debug_subdir, f'failed_request_page_{i+1}.txt'), 'w') as f:
-                                            f.write(f"Response: {response}\n")
-                                            f.write(f"Content: {page_text}")
+                                                if page_text.strip():
+                                                    content += f"## Page {i+1}\n\n{page_text}\n\n"
+                                                else:
+                                                    logger.warning(f"Empty OCR result for page {i+1}")
+                                                    # 保存失败的请求信息
+                                                    with open(os.path.join(debug_subdir, f'failed_request_page_{i+1}.txt'), 'w') as f:
+                                                        f.write(f"Response: {response}\n")
+                                                        f.write(f"Content: {page_text}")
+
+                                    except Exception as gpt_error:
+                                        logger.error(f"GPT-4V processing error: {gpt_error}")
+                                        # 如果GPT-4V失败，使用Tesseract的结果
+                                        page_text = tesseract_text or paddle_text or "OCR处理失败"
+
+                                # 保存识别结果
+                                if page_text.strip():
+                                    content += f"## Page {i+1}\n\n{page_text}\n\n"
+                                    # 保存调试信息
+                                    debug_info = {
+                                        'tesseract_result': tesseract_text,
+                                        'paddle_result': paddle_text,
+                                        'final_result': page_text
+                                    }
+                                    with open(os.path.join(debug_subdir, f'ocr_debug_page_{i+1}.json'), 'w', encoding='utf-8') as f:
+                                        json.dump(debug_info, f, ensure_ascii=False, indent=2)
+                                else:
+                                    logger.warning(f"Empty OCR result for page {i+1}")
 
                             except Exception as ocr_error:
-                                logger.error(f"GPT-4V processing error on page {i+1}: {ocr_error}")
-                                # 记录详细错误信息
+                                logger.error(f"OCR processing error on page {i+1}: {ocr_error}")
                                 with open(os.path.join(debug_subdir, f'error_log_page_{i+1}.txt'), 'w') as f:
                                     f.write(f"Error: {str(ocr_error)}\n")
-                                    f.write(f"Error type: {type(ocr_error)}\n")
                                 continue
 
                     # 检查最终结果
@@ -590,7 +732,7 @@ def convert_file(self, filepath: str, file_hash: str):
         # 存为markdown文件
         source_path = Path(filepath)
         filename = f"{source_path.stem}.md"  # 保留完整的文件名
-        markdown_path = os.path.join(MARKDOWN_FOLDER, filename)
+        markdown_path = os.path.join(user_folders['markdown'], filename)
         logger.info(f"Writing content to {markdown_path}")
 
         # 写入文件
@@ -609,8 +751,9 @@ def convert_file(self, filepath: str, file_hash: str):
             'markdown_path': markdown_path
         }
 
-        # 保存结果到缓存
-        save_cache_result(file_hash, result)
+        # 保存结果到用户特定的缓存
+        cache_path = os.path.join(user_folders['cache'], f"{file_hash}.json")
+        save_cache_result(cache_path, result)
 
         return result
 
